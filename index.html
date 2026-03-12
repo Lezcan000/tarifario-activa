@@ -59,21 +59,22 @@
     const { useState, useMemo, useEffect } = React;
 
     // === URL REAL DE APPSCRIPT ===
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxk-sWu510PvVNmZ7g0POVgnqdsd-m_mfYl0IkXuW-ALhE3QTWn0hVqVHTHu4I5n6s/exec"; 
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwRIqdQAIl6KkQ9juiC0vJL1-BPaNg-yAA3QjFOa_cvuNBfT-WSM3jI6VmzhE9fFTo/exec"; 
     // =================================================
 
     const PASSWORD_ADMIN = "admin123";
 
+    // Se actualizó para mapear exactamente con los nombres de las columnas de tu Google Sheets
     const REGIONES = {
-      "AM": { nombre: "Área Metropolitana", factor: 1.0 },
-      "UR": { nombre: "Urabá", factor: 1.14 },
-      "SO": { nombre: "Suroeste", factor: 1.12 },
-      "OC": { nombre: "Occidente", factor: 1.12 },
-      "NT": { nombre: "Norte", factor: 1.12 },
-      "MM": { nombre: "Magdalena Medio", factor: 1.14 },
-      "ND": { nombre: "Nordeste", factor: 1.13 },
-      "BC": { nombre: "Bajo Cauca", factor: 1.13 },
-      "OR": { nombre: "Oriente", factor: 1.10 },
+      "AM": { nombre: "Área Metropolitana", columna: "Precio final Área Metropolitana" },
+      "UR": { nombre: "Urabá", columna: "Urabá" },
+      "SO": { nombre: "Suroeste", columna: "Suroeste" },
+      "OC": { nombre: "Occidente", columna: "Occidente" },
+      "NT": { nombre: "Norte", columna: "Norte" },
+      "MM": { nombre: "Magdalena Medio", columna: "Magdalena Medio" },
+      "ND": { nombre: "Nordeste", columna: "Nordeste" },
+      "BC": { nombre: "Bajo Cauca", columna: "Bajo Cauca" },
+      "OR": { nombre: "Oriente", columna: "Oriente" },
     };
 
     const CATEGORIAS = [
@@ -149,21 +150,32 @@
       };
 
       const startEditingObs = (codigo) => {
-        setTempObsValue(observaciones[codigo] || "");
+        // Extraemos el texto de la observación (ahora es un objeto)
+        const obsData = observaciones[codigo] || {};
+        setTempObsValue(obsData.texto || "");
         setEditingObs(codigo);
       };
 
       // Guardar observación y enviarla a Google Sheets (y correo)
       const saveObservation = (codigo) => {
         setIsSaving(true);
+        const regionNombre = REGIONES[selectedRegion].nombre;
+
         fetch(SCRIPT_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ codigo: codigo, observacion: tempObsValue })
+          body: JSON.stringify({ 
+              codigo: codigo, 
+              observacion: tempObsValue,
+              subregion: regionNombre
+          })
         })
         .then(res => res.json())
         .then(response => {
-           setObservaciones(prev => ({ ...prev, [codigo]: tempObsValue }));
+           setObservaciones(prev => ({ 
+               ...prev, 
+               [codigo]: { texto: tempObsValue, subregion: regionNombre } 
+           }));
            setEditingObs(null);
            setIsSaving(false);
         })
@@ -178,13 +190,16 @@
       const exportToExcelAdvanced = () => {
         const dataForExcel = filteredData.map(item => {
             const codigo = item["Código"] || item["codigo"];
-            const obs = observaciones[codigo] || "";
+            const obsData = observaciones[codigo] || {};
+            const obsTexto = obsData.texto || "";
+            const obsSubregion = obsData.subregion || "";
             
             // Clonamos el ítem para que descargue exactamente las columnas de Google Sheets
             const rowData = { ...item };
             
-            // Añadimos la columna de Observaciones al final
-            rowData["OBSERVACIÓN INTERNA"] = isUnlocked ? obs : (obs ? "Contenido bloqueado (Requiere contraseña)" : "");
+            // Añadimos las columnas de Observaciones al final
+            rowData["OBSERVACIÓN INTERNA"] = isUnlocked ? obsTexto : (obsTexto ? "Contenido bloqueado (Requiere contraseña)" : "");
+            rowData["OBSERVACIÓN SUBREGIÓN"] = isUnlocked ? obsSubregion : (obsSubregion ? "Contenido bloqueado" : "");
             
             return rowData;
         });
@@ -195,6 +210,7 @@
         // --- ANCHOS DE COLUMNA DINÁMICOS ---
         const wscols = [];
         let obsColIndex = -1;
+        let obsSubColIndex = -1;
 
         for (let C = range.s.c; C <= range.e.c; ++C) {
             const headerAddress = XLSX.utils.encode_cell({c: C, r: 0});
@@ -204,9 +220,13 @@
                 // Asignar anchos dependiendo del nombre de la columna para que se vea bien
                 if (headerText.includes("característica")) wscols.push({wch: 60});
                 else if (headerText.includes("descripción")) wscols.push({wch: 40});
-                else if (headerText.includes("observación")) {
+                else if (headerText.includes("observación interna")) {
                     wscols.push({wch: 40});
-                    obsColIndex = C; // Guardamos dónde quedó la observación para pintarla azul
+                    obsColIndex = C; 
+                }
+                else if (headerText.includes("observación subregión")) {
+                    wscols.push({wch: 25});
+                    obsSubColIndex = C; 
                 }
                 else wscols.push({wch: 20});
             } else {
@@ -249,15 +269,18 @@
                     alignment: { vertical: "top", wrapText: true } // Ajuste de texto para las descripciones
                 };
 
-                // Si es la columna de Observaciones Privadas, la ponemos azul rey
-                if (C === obsColIndex && worksheet[cellAddress].v) {
+                // Si es la columna de Observaciones Privadas o Subregión, la ponemos azul rey
+                if ((C === obsColIndex || C === obsSubColIndex) && worksheet[cellAddress].v) {
                     cellStyle.font = { color: { rgb: "0052CC" }, bold: true }; 
                 }
 
-                // Formato de moneda automático si el encabezado dice "Precio" o "Valor"
+                // Formato de moneda automático si el encabezado dice "Precio", "Valor" o coincide con nombres de subregiones
                 const headerCell = worksheet[XLSX.utils.encode_cell({c: C, r: 0})];
-                const isCurrency = headerCell && typeof headerCell.v === 'string' && 
-                                  (headerCell.v.toLowerCase().includes("precio") || headerCell.v.toLowerCase().includes("valor"));
+                const headerText = headerCell && typeof headerCell.v === 'string' ? headerCell.v.toLowerCase() : "";
+                
+                const isCurrency = headerText.includes("precio") || 
+                                   headerText.includes("valor") || 
+                                   Object.values(REGIONES).some(r => headerText.includes(r.nombre.toLowerCase()) || headerText.includes(r.columna.toLowerCase()));
                 
                 if (isCurrency && typeof worksheet[cellAddress].v === 'number') {
                     cellStyle.numFmt = '"$"#,##0';
@@ -317,7 +340,7 @@
                   <button onClick={() => setShowAuthModal(false)} className="text-slate-400 hover:text-red-500 transition-colors"><i className="fa-solid fa-times text-xl"></i></button>
                 </div>
                 <form onSubmit={handleLogin} className="p-6">
-                  <p className="text-sm text-slate-600 mb-4">Ingresa la contraseña para desbloquear las observaciones de los ítems.<br/><span className="text-xs text-brand-600 font-semibold">(Clave: admin123)</span></p>
+                  <p className="text-sm text-slate-600 mb-4">Ingresa la contraseña para desbloquear las observaciones de los ítems.</p>
                   <input type="password" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none mb-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500" autoFocus />
                   {authError && <div className="text-red-500 text-sm mb-4 font-medium"><i className="fa-solid fa-exclamation-circle"></i> {authError}</div>}
                   <div className="flex justify-end gap-3 mt-6">
@@ -362,7 +385,7 @@
               <div className="bg-brand-50 px-6 py-4 border-b border-brand-100 text-sm font-medium text-brand-800 flex flex-col sm:flex-row justify-between items-center gap-2">
                 <span>Mostrando <span className="font-bold">{filteredData.length}</span> resultados</span>
                 <span className="bg-white px-3 py-1 rounded-full border border-brand-200 text-brand-700 shadow-sm">
-                    <i className="fa-solid fa-calculator mr-1"></i> Precios calculados para: <b className="text-brand-900 uppercase">{REGIONES[selectedRegion].nombre}</b>
+                    <i className="fa-solid fa-calculator mr-1"></i> Precios directos para: <b className="text-brand-900 uppercase">{REGIONES[selectedRegion].nombre}</b>
                 </span>
               </div>
 
@@ -384,12 +407,19 @@
                       const descripcion = item["Descripción"] || item["descripcion"];
                       const caracteristicas = item["Características"] || item["caracteristicas"];
                       const rango = item["Rango"] || item["rango"];
-                      const precioBase = parseFloat(item["Precio final Área Metropolitana"] || item["precioBase"]) || 0;
                       
-                      const multiplicador = REGIONES[selectedRegion].factor;
-                      const precioCalculado = precioBase * multiplicador;
+                      // Extraemos el precio directamente de la columna de la región seleccionada (sin multiplicar)
+                      const nombreColumnaRegion = REGIONES[selectedRegion].columna;
+                      let precioExacto = parseFloat(item[nombreColumnaRegion]);
+                      
+                      // Fallback por si la columna se llama exactamente igual al nombre de la región 
+                      if (isNaN(precioExacto)) {
+                          precioExacto = parseFloat(item[REGIONES[selectedRegion].nombre]) || 0;
+                      }
+
                       const isExpanded = expandedRow === codigo;
-                      const hasObservation = !!observaciones[codigo];
+                      const obsData = observaciones[codigo] || {};
+                      const hasObservation = !!obsData.texto;
 
                       return (
                         <React.Fragment key={codigo}>
@@ -406,7 +436,7 @@
                               </div>
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-500 font-medium">{rango}</td>
-                            <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioCalculado)}</td>
+                            <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioExacto)}</td>
                           </tr>
 
                           {/* FILA EXPANDIBLE */}
@@ -468,7 +498,13 @@
                                           </div>
                                         ) : (
                                           <div className="text-sm text-amber-950 whitespace-pre-line leading-relaxed min-h-[60px] p-2">
-                                            {observaciones[codigo] || <span className="text-amber-600/60 italic font-medium">No hay observaciones registradas para este ítem.</span>}
+                                            {obsData.texto || <span className="text-amber-600/60 italic font-medium">No hay observaciones registradas para este ítem.</span>}
+                                            
+                                            {obsData.subregion && (
+                                                <div className="mt-3 pt-2 border-t border-amber-200/50 flex items-center gap-1 text-xs text-amber-800 font-bold">
+                                                    <i className="fa-solid fa-map-pin"></i> Subregión registrada: {obsData.subregion}
+                                                </div>
+                                            )}
                                           </div>
                                         )}
                                       </div>
