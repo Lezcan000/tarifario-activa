@@ -194,14 +194,25 @@
             const obsTexto = obsData.texto || "";
             const obsSubregion = obsData.subregion || "";
             
-            // Clonamos el ítem para que descargue exactamente las columnas de Google Sheets
-            const rowData = { ...item };
-            
-            // Añadimos las columnas de Observaciones al final
-            rowData["OBSERVACIÓN INTERNA"] = isUnlocked ? obsTexto : (obsTexto ? "Contenido bloqueado (Requiere contraseña)" : "");
-            rowData["OBSERVACIÓN SUBREGIÓN"] = isUnlocked ? obsSubregion : (obsSubregion ? "Contenido bloqueado" : "");
-            
-            return rowData;
+            // Creamos un objeto ordenado estrictamente con las columnas que solicitaste
+            return {
+                "Código": codigo,
+                "Grupo": item["Grupo"] || item["grupo"] || "",
+                "Descripción": item["Descripción"] || item["descripcion"] || "",
+                "Características": item["Características"] || item["caracteristicas"] || "",
+                "Rango": item["Rango"] || item["rango"] || "",
+                "Precio final Área Metropolitana": parseFloat(item["Precio final Área Metropolitana"]) || 0,
+                "Urabá": parseFloat(item["Urabá"]) || 0,
+                "Suroeste": parseFloat(item["Suroeste"]) || 0,
+                "Occidente": parseFloat(item["Occidente"]) || 0,
+                "Norte": parseFloat(item["Norte"]) || 0,
+                "Magdalena Medio": parseFloat(item["Magdalena Medio"]) || 0,
+                "Nordeste": parseFloat(item["Nordeste"]) || 0,
+                "Bajo Cauca": parseFloat(item["Bajo Cauca"]) || 0,
+                "Oriente": parseFloat(item["Oriente"]) || 0,
+                "OBSERVACIÓN INTERNA": isUnlocked ? obsTexto : (obsTexto ? "Contenido bloqueado (Requiere contraseña)" : ""),
+                "OBSERVACIÓN SUBREGIÓN": isUnlocked ? obsSubregion : (obsSubregion ? "Contenido bloqueado" : "")
+            };
         });
 
         const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
