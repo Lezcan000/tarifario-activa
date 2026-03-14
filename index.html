@@ -134,7 +134,12 @@
         });
       }, [data, searchTerm, selectedCategory]);
 
-      const formatCurrency = (value) => {
+      const formatCurrency = (value, isPercentage = false) => {
+        if (isPercentage) {
+          return new Intl.NumberFormat('es-CO', {
+            style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2
+          }).format(value);
+        }
         return new Intl.NumberFormat('es-CO', {
           style: 'currency', currency: 'COP', minimumFractionDigits: 0
         }).format(value);
@@ -280,16 +285,25 @@
                     alignment: { vertical: "top", wrapText: true } // Ajuste de texto para las descripciones
                 };
 
-                // Formato de moneda automático si el encabezado dice "Precio", "Valor" o coincide con nombres de subregiones
+                // Identificar si la fila es "Porcentaje de pago a terceros" (Columna Descripción es el índice 2)
+                const descCell = worksheet[XLSX.utils.encode_cell({c: 2, r: R})];
+                const descText = descCell && typeof descCell.v === 'string' ? descCell.v.toLowerCase() : "";
+                const isPercentageRow = descText.includes("porcentaje de pago a terceros");
+
+                // Formato de moneda o porcentaje automático
                 const headerCell = worksheet[XLSX.utils.encode_cell({c: C, r: 0})];
                 const headerText = headerCell && typeof headerCell.v === 'string' ? headerCell.v.toLowerCase() : "";
                 
-                const isCurrency = headerText.includes("precio") || 
+                const isCurrencyColumn = headerText.includes("precio") || 
                                    headerText.includes("valor") || 
                                    Object.values(REGIONES).some(r => headerText.includes(r.nombre.toLowerCase()) || headerText.includes(r.columna.toLowerCase()));
                 
-                if (isCurrency && typeof worksheet[cellAddress].v === 'number') {
-                    cellStyle.numFmt = '"$"#,##0';
+                if (isCurrencyColumn && typeof worksheet[cellAddress].v === 'number') {
+                    if (isPercentageRow) {
+                        cellStyle.numFmt = '0.00%'; // Formato de porcentaje con 2 decimales
+                    } else {
+                        cellStyle.numFmt = '"$"#,##0';
+                    }
                 }
 
                 worksheet[cellAddress].s = cellStyle;
@@ -414,6 +428,8 @@
                       const caracteristicas = item["Características"] || item["caracteristicas"];
                       const rango = item["Rango"] || item["rango"];
                       
+                      const isPercentageRow = String(descripcion).toLowerCase().includes("porcentaje de pago a terceros");
+
                       // Extraemos el precio directamente de la columna de la región seleccionada (sin multiplicar)
                       const nombreColumnaRegion = REGIONES[selectedRegion].columna;
                       let precioExacto = parseFloat(item[nombreColumnaRegion]);
@@ -451,7 +467,7 @@
                               </div>
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-500 font-medium">{rango}</td>
-                            <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioExacto)}</td>
+                            <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioExacto, isPercentageRow)}</td>
                           </tr>
 
                           {/* FILA EXPANDIBLE */}
