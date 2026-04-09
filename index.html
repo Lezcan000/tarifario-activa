@@ -639,6 +639,7 @@
                       <th className="px-6 py-4 font-bold w-24" scope="col">Código</th>
                       <th className="px-6 py-4 font-bold w-40" scope="col">{currentView === 'general' ? 'Grupo' : 'Tipo'}</th>
                       <th className="px-6 py-4 font-bold" scope="col">Descripción</th>
+                      {currentView === 'general' && <th className="px-6 py-4 font-bold min-w-[250px]" scope="col">Características</th>}
                       {currentView === 'general' && <th className="px-6 py-4 font-bold" scope="col">Rango / Medida</th>}
                       <th className="px-6 py-4 font-bold text-right" scope="col">{currentView === 'general' ? 'Precio Final' : 'Valor'}</th>
                     </tr>
@@ -684,25 +685,18 @@
                             <td className="px-6 py-4 text-sm text-slate-800 font-semibold">
                               {descripcion}
                               <div className="text-xs text-brand-600 mt-1 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
-                                {isExpanded ? 'Ocultar detalles ▲' : 'Ver características ▼'}
+                                {isExpanded ? 'Ocultar observaciones ▲' : 'Ver observaciones ▼'}
                               </div>
                             </td>
+                            <td className="px-6 py-4 text-sm text-slate-700 whitespace-pre-line leading-relaxed min-w-[250px]">{caracteristicas}</td>
                             <td className="px-6 py-4 text-sm text-slate-500 font-medium">{rango}</td>
                             <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioExacto, isPercentageRow)}</td>
                           </tr>
 
                           {isExpanded && (
                             <tr className="bg-slate-50 border-b-2 border-brand-200">
-                              <td colSpan="5" className="px-6 py-6">
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                  <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                                    <h4 className="text-xs font-bold uppercase text-slate-500 mb-3 border-b pb-2 flex items-center">
-                                        <div className="bg-slate-100 p-1.5 rounded mr-2"><i className="fa-solid fa-list-check text-slate-600"></i></div> 
-                                        Especificaciones Técnicas
-                                    </h4>
-                                    <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed">{caracteristicas}</p>
-                                  </div>
-
+                              <td colSpan="6" className="px-6 py-6">
+                                <div className="w-full max-w-3xl mx-auto">
                                   {/* Uso del componente reutilizable (Mantenimiento mejorado) */}
                                   <ObservacionInterna 
                                       codigo={codigo}
@@ -754,12 +748,13 @@
                             <td className="px-6 py-4 text-sm text-slate-800 font-semibold">
                               {descripcion}
                               <div className="text-xs text-brand-600 mt-1 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
-                                {isExpanded ? 'Ocultar detalles ▲' : 'Ver observaciones ▼'}
+                                {isExpanded ? 'Ocultar observaciones ▲' : 'Ver observaciones ▼'}
                               </div>
                             </td>
                             <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioExacto, isPercentageRow)}</td>
                           </tr>
 
+                          {/* FILA EXPANDIBLE PREMIUM (Solo Observaciones ya que no hay Características) */}
                           {isExpanded && (
                             <tr className="bg-slate-50 border-b-2 border-brand-200">
                               <td colSpan="4" className="px-6 py-6">
@@ -787,7 +782,7 @@
                     {/* SIN RESULTADOS */}
                     {((currentView === 'general' && filteredData.length === 0) || (currentView === 'premium' && filteredPremiumData.length === 0)) && (
                       <tr>
-                        <td colSpan="5" className="px-6 py-16 text-center">
+                        <td colSpan={currentView === 'general' ? "6" : "4"} className="px-6 py-16 text-center">
                           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
                               <i className="fa-solid fa-box-open text-2xl text-slate-300"></i>
                           </div>
