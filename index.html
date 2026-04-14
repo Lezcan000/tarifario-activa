@@ -86,6 +86,7 @@
     const getCodigo = (item) => item["CÓDIGO"] || item["Código"] || item["codigo"] || "";
     const getDesc = (item) => item["DESCRIPCIÓN"] || item["Descripción"] || item["descripcion"] || "";
     const getTipo = (item) => item["TIPO"] || item["Tipo"] || item["tipo"] || "";
+    const getCualidad = (item) => item["CUALIDAD"] || item["Cualidad"] || item["cualidad"] || "";
     const getGrupo = (item) => item["GRUPO"] || item["Grupo"] || item["grupo"] || "";
     const getCaract = (item) => item["CARACTERÍSTICAS"] || item["Características"] || item["caracteristicas"] || "";
     const getRango = (item) => item["RANGO"] || item["Rango"] || item["rango"] || "";
@@ -218,11 +219,13 @@
         });
       }, [data, debouncedSearch, selectedCategory]);
 
-      // Categorías dinámicas Premium
-      const CATEGORIAS_PREMIUM = useMemo(() => {
-          const types = new Set(premiumData.map(item => getTipo(item) || "Otros"));
-          return ["Todos", ...Array.from(types).filter(t => t)];
-      }, [premiumData]);
+      // Categorías fijas Premium
+      const CATEGORIAS_PREMIUM = [
+        "Todos", 
+        "MATERIAL BIODEGRADABLE", 
+        "CON SERVICIO A LA MESA", 
+        "ESTACIÓN DE CAFÉ"
+      ];
 
       // Filtrado Premium
       const filteredPremiumData = useMemo(() => {
@@ -230,13 +233,16 @@
           const codigo = getCodigo(item);
           const desc = getDesc(item);
           const tipo = getTipo(item);
+          const cualidad = getCualidad(item);
 
           const matchSearch = 
             String(codigo).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
             String(desc).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-            String(tipo).toLowerCase().includes(debouncedSearch.toLowerCase());
+            String(tipo).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            String(cualidad).toLowerCase().includes(debouncedSearch.toLowerCase());
           
-          const matchCategory = selectedPremiumCategory === "Todos" || tipo === selectedPremiumCategory;
+          // Filtramos comparando con cualidad en lugar de tipo
+          const matchCategory = selectedPremiumCategory === "Todos" || cualidad === selectedPremiumCategory;
           return matchSearch && matchCategory;
         });
       }, [premiumData, debouncedSearch, selectedPremiumCategory]);
@@ -806,4 +812,4 @@
     root.render(<App />);
   </script>
 </body>
-</html>
+</html>l>
