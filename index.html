@@ -64,6 +64,793 @@
   
   <div id="root"></div>
 
+  <script type="text/babel" data-presets="react-clasico">
+    const { useState, useMemo, useEffect, useCallback } = React;
+
+    // === URL REAL DE APPSCRIPT ===
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyhRWhi481x-yi_S8sP8uh9MWFvsBLK0G1VtjkhsJVPHQWuDHQKwW7KVVAKRpLdLhE/exec"; 
+    // =================================================
+
+    // ¡SEGURIDAD! La contraseña se eliminó del frontend. 
+    // Toda validación se hace exclusivamente en Google Apps Script.
+
+    const REGIONES = {
+      "AM": { nombre: "Área Metropolitana", columna: "Precio final Área Metropolitana" },
+      "UR": { nombre: "Urabá", columna: "Urabá" },
+      "SO": { nombre: "Suroeste", columna: "Suroeste" },
+      "OC": { nombre: "Occidente", columna: "Occidente" },
+      "NT": { nombre: "Norte", columna: "Norte" },
+      "MM": { nombre: "Magdalena Medio", columna: "Magdalena Medio" },
+      "ND": { nombre: "Nordeste", columna: "Nordeste" },
+      "BC": { nombre: "Bajo Cauca", columna: "Bajo Cauca" },
+      "OR": { nombre: "Oriente", columna: "Oriente" },
+    };
+
+    const CATEGORIAS_GENERALES = [
+      "Todos", "Alimentación y bebidas", "Backline", "Impresos", 
+      "Mobiliario", "Salud", "Suministros", "Técnico", "Transporte", "Varios"
+    ];
+
+    // Funciones auxiliares para normalizar la lectura de columnas
+    const getCodigo = (item) => item["CÓDIGO"] || item["Código"] || item["codigo"] || "";
+    const getDesc = (item) => item["DESCRIPCIÓN"] || item["Descripción"] || item["descripcion"] || "";
+    const getTipo = (item) => item["TIPO"] || item["Tipo"] || item["tipo"] || "";
+    const getCualidad = (item) => item["CUALIDAD"] || item["Cualidad"] || item["cualidad"] || "";
+    const getGrupo = (item) => item["GRUPO"] || item["Grupo"] || item["grupo"] || "";
+    const getCaract = (item) => item["CARACTERÍSTICAS"] || item["Características"] || item["caracteristicas"] || "";
+    const getRango = (item) => item["RANGO"] || item["Rango"] || item["rango"] || "";
+    const getValor = (item) => item["VALOR"] || item["Valor"] || item["valor"] || 0;
+
+    // COMPONENTE REUTILIZABLE: Panel de Observaciones
+    function ObservacionInterna({ codigo, isUnlocked, setIsUnlocked, setShowAuthModal, tempObsValue, setTempObsValue, isSaving, saveObservation, obsData }) {
+      return (
+        <div className="bg-amber-50 p-5 rounded-xl border border-amber-200 shadow-sm relative h-full">
+          <h4 className="text-xs font-bold uppercase text-amber-800 mb-3 flex justify-between items-center border-b border-amber-200 pb-2">
+            <span className="flex items-center">
+                <div className={`p-1.5 rounded mr-2 ${isUnlocked ? 'bg-amber-200 text-amber-700' : 'bg-slate-200 text-slate-500'}`}>
+                  <i className={`fa-solid ${isUnlocked ? 'fa-lock-open' : 'fa-lock'}`}></i>
+                </div>
+                Observación Interna
+            </span>
+            <div className="flex gap-2">
+              {isUnlocked && (
+                  <button onClick={() => setIsUnlocked(false)} className="text-slate-600 hover:text-slate-800 bg-slate-200 hover:bg-slate-300 px-3 py-1 rounded transition-colors text-xs font-bold" aria-label="Bloquear módulo">
+                    <i className="fa-solid fa-lock"></i> Bloquear
+                  </button>
+              )}
+            </div>
+          </h4>
+
+          {!isUnlocked ? (
+            <div className="text-center py-6">
+              <div className="bg-amber-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <i className="fa-solid fa-lock text-amber-400 text-2xl"></i>
+              </div>
+              <p className="text-sm font-bold text-amber-900 mb-1">Observaciones</p>
+              <p className="text-sm text-amber-800 mb-4 px-2">Escribe las observaciones que tengas sobre este item para ser enviadas a ACTIVA.</p>
+              <button onClick={() => setShowAuthModal(true)} className="px-5 py-2 mt-2 bg-slate-800 text-white text-sm font-bold rounded-lg hover:bg-slate-900 transition-colors shadow-md">
+                <i className="fa-solid fa-key mr-2"></i>Enviar observación
+              </button>
+            </div>
+          ) : (
+            <div className="h-full flex flex-col gap-2">
+                <label htmlFor={`obs-${codigo}`} className="sr-only">Escribe una nota interna para {codigo}</label>
+                <p className="text-sm text-amber-900 font-medium mb-1">Escribe las observaciones que tengas sobre este item para ser enviadas a ACTIVA.</p>
+                <textarea 
+                    id={`obs-${codigo}`}
+                    value={tempObsValue} 
+                    onChange={(e) => setTempObsValue(e.target.value)} 
+                    placeholder="Escribe una nota interna confidencial para este ítem..." 
+                    className="w-full p-3 border-2 border-amber-300 rounded-lg text-sm outline-none resize-y min-h-[100px] focus:border-amber-500 bg-white" 
+                    disabled={isSaving} 
+                />
+                {obsData.subregion && (
+                    <div className="pt-1 flex items-center gap-1 text-xs text-amber-800 font-bold">
+                        <i className="fa-solid fa-map-pin"></i> Última subregión registrada: {obsData.subregion}
+                    </div>
+                )}
+                <div className="flex justify-end mt-2">
+                  <button onClick={() => saveObservation(codigo)} className="px-4 py-2 text-xs font-bold bg-amber-500 text-amber-950 rounded-lg hover:bg-amber-400 transition-colors shadow-sm" disabled={isSaving}>
+                    {isSaving ? <i className="fa-solid fa-circle-notch fa-spin mr-1"></i> : <i className="fa-solid fa-cloud-arrow-up mr-1"></i>} Guardar Nota
+                  </button>
+                </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const [currentView, setCurrentView] = useState('landing'); // 'landing' | 'general' | 'premium'
+      
+      const [data, setData] = useState([]);
+      const [premiumData, setPremiumData] = useState([]);
+      const [observaciones, setObservaciones] = useState({});
+      const [isLoading, setIsLoading] = useState(true);
+      const [fetchError, setFetchError] = useState("");
+
+      // UX: Debounce search
+      const [searchTermInput, setSearchTermInput] = useState("");
+      const [debouncedSearch, setDebouncedSearch] = useState("");
+      
+      const [selectedRegion, setSelectedRegion] = useState("AM");
+      const [selectedCategory, setSelectedCategory] = useState("Todos");
+      const [selectedPremiumCategory, setSelectedPremiumCategory] = useState("Todos");
+      const [expandedRow, setExpandedRow] = useState(null);
+      
+      const [isUnlocked, setIsUnlocked] = useState(false);
+      const [showAuthModal, setShowAuthModal] = useState(false);
+      const [passwordInput, setPasswordInput] = useState("");
+      const [authError, setAuthError] = useState("");
+      
+      const [tempObsValue, setTempObsValue] = useState("");
+      const [isSaving, setIsSaving] = useState(false);
+
+      // Debounce effect para no filtrar en cada tecla presionada
+      useEffect(() => {
+        const timerId = setTimeout(() => {
+          setDebouncedSearch(searchTermInput);
+        }, 300);
+        return () => clearTimeout(timerId);
+      }, [searchTermInput]);
+
+      // Cargar datos al inicio
+      useEffect(() => {
+        fetch(SCRIPT_URL)
+          .then(res => res.json())
+          .then(json => {
+            setData(json.tarifario || []);
+            setPremiumData(json.premium || []);
+            setIsLoading(false);
+          })
+          .catch(err => {
+            console.error("Error cargando datos:", err);
+            setFetchError("Hubo un error conectando a la base de datos de Google Sheets. Intenta recargar la página.");
+            setIsLoading(false);
+          });
+      }, []);
+
+      // Filtrado General
+      const filteredData = useMemo(() => {
+        return data.filter(item => {
+          const codigo = getCodigo(item);
+          const desc = getDesc(item);
+          const caract = getCaract(item);
+          const grupo = getGrupo(item);
+
+          const matchSearch = 
+            String(codigo).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            String(desc).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            String(caract).toLowerCase().includes(debouncedSearch.toLowerCase());
+          
+          const matchCategory = selectedCategory === "Todos" || grupo === selectedCategory;
+          return matchSearch && matchCategory;
+        });
+      }, [data, debouncedSearch, selectedCategory]);
+
+      // Categorías fijas Premium
+      const CATEGORIAS_PREMIUM = [
+        "Todos", 
+        "MATERIAL BIODEGRADABLE", 
+        "CON SERVICIO A LA MESA", 
+        "ESTACIÓN DE CAFÉ"
+      ];
+
+      // Filtrado Premium
+      const filteredPremiumData = useMemo(() => {
+        return premiumData.filter(item => {
+          const codigo = getCodigo(item);
+          const desc = getDesc(item);
+          const tipo = getTipo(item);
+          const cualidad = getCualidad(item);
+
+          const matchSearch = 
+            String(codigo).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            String(desc).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            String(tipo).toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+            String(cualidad).toLowerCase().includes(debouncedSearch.toLowerCase());
+          
+          // Filtramos comparando con cualidad en lugar de tipo
+          const matchCategory = selectedPremiumCategory === "Todos" || cualidad === selectedPremiumCategory;
+          return matchSearch && matchCategory;
+        });
+      }, [premiumData, debouncedSearch, selectedPremiumCategory]);
+
+      const formatCurrency = (value, isPercentage = false) => {
+        if (isPercentage) {
+          return new Intl.NumberFormat('es-CO', {
+            style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2
+          }).format(value);
+        }
+        return new Intl.NumberFormat('es-CO', {
+          style: 'currency', currency: 'COP', minimumFractionDigits: 0
+        }).format(value);
+      };
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        setAuthError("");
+        fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: "unlock", password: passwordInput })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === "Éxito") {
+                setObservaciones(data.observaciones || {});
+                setIsUnlocked(true);
+                setShowAuthModal(false);
+                setPasswordInput("");
+                if (expandedRow) {
+                    setTempObsValue(data.observaciones[expandedRow]?.texto || "");
+                }
+            } else {
+                setAuthError(data.mensaje || "Contraseña incorrecta.");
+            }
+        })
+        .catch(err => {
+            setAuthError("Error de conexión con el servidor.");
+        });
+      };
+
+      const saveObservation = (codigo) => {
+        setIsSaving(true);
+        const regionNombre = currentView === 'general' ? REGIONES[selectedRegion].nombre : "Línea Premium";
+
+        fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ 
+              action: "save",
+              codigo: codigo, 
+              observacion: tempObsValue,
+              subregion: regionNombre
+          })
+        })
+        .then(res => res.json())
+        .then(response => {
+           setObservaciones(prev => ({ 
+               ...prev, 
+               [codigo]: { texto: tempObsValue, subregion: regionNombre } 
+           }));
+           setIsSaving(false);
+        })
+        .catch(err => {
+           console.error(err);
+           alert("Error al guardar la observación. Verifica la conexión.");
+           setIsSaving(false);
+        });
+      };
+
+      // --- EXPORTACIÓN A EXCEL DINÁMICA ---
+      const exportToExcelAdvanced = useCallback(() => {
+        let dataForExcel = [];
+        let sheetName = "";
+
+        if (currentView === 'general') {
+            sheetName = "Tarifario";
+            dataForExcel = filteredData.map(item => {
+                const codigo = getCodigo(item);
+                return {
+                    "Código": codigo,
+                    "Grupo": getGrupo(item),
+                    "Descripción": getDesc(item),
+                    "Características": getCaract(item),
+                    "Rango": getRango(item),
+                    "Precio final Área Metropolitana": parseFloat(item["Precio final Área Metropolitana"]) || 0,
+                    "Urabá": parseFloat(item["Urabá"]) || 0,
+                    "Suroeste": parseFloat(item["Suroeste"]) || 0,
+                    "Occidente": parseFloat(item["Occidente"]) || 0,
+                    "Norte": parseFloat(item["Norte"]) || 0,
+                    "Magdalena Medio": parseFloat(item["Magdalena Medio"]) || 0,
+                    "Nordeste": parseFloat(item["Nordeste"]) || 0,
+                    "Bajo Cauca": parseFloat(item["Bajo Cauca"]) || 0,
+                    "Oriente": parseFloat(item["Oriente"]) || 0
+                };
+            });
+        } else if (currentView === 'premium') {
+            sheetName = "Premium";
+            dataForExcel = filteredPremiumData.map(item => {
+                const codigo = getCodigo(item);
+                return {
+                    "Código": codigo,
+                    "Tipo": getTipo(item),
+                    "Descripción": getDesc(item),
+                    "Valor": parseFloat(getValor(item)) || 0
+                };
+            });
+        }
+
+        const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+        const range = XLSX.utils.decode_range(worksheet['!ref']);
+
+        const wscols = [];
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+            const headerAddress = XLSX.utils.encode_cell({c: C, r: 0});
+            if (worksheet[headerAddress]) {
+                const headerText = String(worksheet[headerAddress].v).toLowerCase();
+                if (headerText.includes("característica")) wscols.push({wch: 60});
+                else if (headerText.includes("descripción")) wscols.push({wch: 40});
+                else wscols.push({wch: 20});
+            } else {
+                wscols.push({wch: 20});
+            }
+        }
+        worksheet['!cols'] = wscols;
+
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+            const headerAddress = XLSX.utils.encode_cell({c: C, r: 0});
+            if (worksheet[headerAddress]) {
+                worksheet[headerAddress].s = {
+                    fill: { fgColor: { rgb: "D5E8D4" } }, 
+                    font: { bold: true, color: { rgb: "000000" } },
+                    border: {
+                        top: { style: "thin", color: { rgb: "000000" } },
+                        bottom: { style: "thin", color: { rgb: "000000" } },
+                        left: { style: "thin", color: { rgb: "000000" } },
+                        right: { style: "thin", color: { rgb: "000000" } }
+                    },
+                    alignment: { vertical: "center", horizontal: "center", wrapText: true }
+                };
+            }
+
+            for (let R = 1; R <= range.e.r; ++R) {
+                const cellAddress = XLSX.utils.encode_cell({c: C, r: R});
+                if (!worksheet[cellAddress]) continue;
+
+                let cellStyle = {
+                    border: {
+                        top: { style: "thin", color: { rgb: "000000" } },
+                        bottom: { style: "thin", color: { rgb: "000000" } },
+                        left: { style: "thin", color: { rgb: "000000" } },
+                        right: { style: "thin", color: { rgb: "000000" } }
+                    },
+                    alignment: { vertical: "top", wrapText: true } 
+                };
+
+                const descCellIndex = currentView === 'general' ? 2 : 2; 
+                const descCell = worksheet[XLSX.utils.encode_cell({c: descCellIndex, r: R})];
+                const descText = descCell && typeof descCell.v === 'string' ? descCell.v.toLowerCase() : "";
+                const isPercentageRow = descText.includes("porcentaje de pago a terceros");
+
+                const headerCell = worksheet[XLSX.utils.encode_cell({c: C, r: 0})];
+                const headerText = headerCell && typeof headerCell.v === 'string' ? headerCell.v.toLowerCase() : "";
+                
+                const isCurrencyColumn = headerText.includes("precio") || headerText.includes("valor") || 
+                                   Object.values(REGIONES).some(r => headerText.includes(r.nombre.toLowerCase()) || headerText.includes(r.columna.toLowerCase()));
+                
+                if (isCurrencyColumn && typeof worksheet[cellAddress].v === 'number') {
+                    if (isPercentageRow) {
+                        cellStyle.numFmt = '0.00%'; 
+                    } else {
+                        cellStyle.numFmt = '"$"#,##0';
+                    }
+                }
+
+                worksheet[cellAddress].s = cellStyle;
+            }
+        }
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+        
+        const fileName = currentView === 'general' ? `Tarifario_Activa_${selectedRegion}.xlsx` : `Tarifario_Premium.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+      }, [currentView, filteredData, filteredPremiumData, selectedRegion]);
+
+      // Función helper para no repetir el bloque de fallback de la imagen
+      const handleImageError = (e) => {
+        e.target.onerror = null;
+        e.target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNTAiIGhlaWdodD0iNTAiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiNlMmU4ZjAiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM2NDc0OGIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5Mb2dvIEFjdGl2YTwvdGV4dD48L3N2Zz4=';
+      };
+
+      // --- RENDERIZADOS ---
+
+      // 1. Pantalla de carga Inicial (Soluciona el problema de UX que señaló Claude)
+      if (isLoading) {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-brand-50 text-brand-700">
+             <i className="fa-solid fa-circle-notch fa-spin fa-3x mb-4"></i>
+             <h2 className="text-xl font-bold">Cargando datos...</h2>
+          </div>
+        );
+      }
+
+      // 2. Pantalla de Error en caso de que Google Sheets falle
+      if (fetchError) {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-brand-50 p-4">
+             <div className="bg-white p-8 rounded-xl shadow-md text-center max-w-md">
+                <i className="fa-solid fa-triangle-exclamation text-4xl text-red-500 mb-4"></i>
+                <h2 className="text-xl font-bold text-slate-800 mb-2">Problema de conexión</h2>
+                <p className="text-slate-600 mb-6">{fetchError}</p>
+                <button onClick={() => window.location.reload()} className="px-6 py-2 bg-brand-600 text-white rounded-lg font-bold">Reintentar</button>
+             </div>
+          </div>
+        );
+      }
+
+      // 3. Pantalla de Inicio (Landing Page)
+      if (currentView === 'landing') {
+        return (
+          <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+            <div className="max-w-4xl w-full">
+              <div className="text-center mb-12">
+                <img src="logo.png" alt="Logo Empresa Activa" onError={handleImageError} className="h-24 object-contain mx-auto mb-6 bg-white rounded-xl p-3 shadow-sm border border-slate-100" />
+                <h1 className="text-3xl md:text-4xl font-bold text-slate-800 mb-3">
+                  Empresa de Parques y Eventos de Antioquia
+                </h1>
+                <p className="text-lg text-slate-500">
+                  Seleccione el tarifario que desea consultar
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button 
+                  onClick={() => { setCurrentView('general'); setSearchTermInput(""); setDebouncedSearch(""); }}
+                  className="bg-white hover:bg-brand-50 border-2 border-transparent hover:border-brand-500 rounded-2xl p-8 flex flex-col items-center text-center transition-all shadow-sm hover:shadow-md cursor-pointer group"
+                >
+                  <div className="w-20 h-20 bg-brand-100 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                    <i className="fa-solid fa-file-invoice-dollar text-3xl text-brand-600"></i>
+                  </div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-3">Tarifario General</h2>
+                  <p className="text-slate-500">
+                    Consulta los precios directos por subregión para eventos, actividades y mercadeo.
+                  </p>
+                </button>
+
+                <button 
+                  onClick={() => { setCurrentView('premium'); setSearchTermInput(""); setDebouncedSearch(""); }}
+                  className="bg-white hover:bg-brand-50 border-2 border-transparent hover:border-brand-500 rounded-2xl p-8 flex flex-col items-center text-center transition-all shadow-sm hover:shadow-md cursor-pointer group"
+                >
+                  <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                    <i className="fa-solid fa-gem text-3xl text-amber-500"></i>
+                  </div>
+                  <h2 className="text-2xl font-bold text-slate-800 mb-3">Tarifario Alimentación Premium</h2>
+                  <p className="text-slate-500">
+                    Línea premium, gourmet y saludable con valores generales.
+                  </p>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // 4. Renderizado Común (Encabezado y Modal) para General y Premium
+      return (
+        <div className="pb-10">
+          
+          <header className="bg-brand-700 text-white p-6 shadow-md border-b-4 border-brand-500">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => { setCurrentView('landing'); setExpandedRow(null); }} 
+                  className="text-brand-100 hover:text-white transition-colors flex items-center justify-center" 
+                  title="Volver al inicio"
+                  aria-label="Volver al inicio"
+                >
+                    <i className="fa-solid fa-arrow-left text-2xl"></i>
+                </button>
+                <img src="logo.png" alt="Logo Empresa Activa" onError={handleImageError} className="h-14 object-contain bg-white rounded p-1" />
+                <h1 className="text-2xl md:text-3xl font-bold">
+                  {currentView === 'general' ? 'Tarifario General - ACTIVA' : 'Tarifario Alimentación Premium - ACTIVA'}
+                </h1>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button onClick={exportToExcelAdvanced} className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 border border-brand-400 px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-colors">
+                  Descargar a Excel
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {showAuthModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border-t-4 border-brand-500">
+                <div className="bg-slate-50 px-6 py-4 flex justify-between items-center text-slate-800 border-b">
+                  <h3 className="font-bold text-lg"><i className="fa-solid fa-shield-halved text-brand-600 mr-2"></i>Acceso Restringido</h3>
+                  <button onClick={() => setShowAuthModal(false)} className="text-slate-400 hover:text-red-500 transition-colors" aria-label="Cerrar modal"><i className="fa-solid fa-times text-xl"></i></button>
+                </div>
+                <form onSubmit={handleLogin} className="p-6">
+                  <p className="text-sm text-slate-600 mb-4">Ingresa la contraseña para desbloquear las observaciones de los ítems.</p>
+                  
+                  <label htmlFor="modalPassword" className="sr-only">Contraseña de acceso</label>
+                  <input 
+                    id="modalPassword"
+                    type="password" 
+                    value={passwordInput} 
+                    onChange={(e) => setPasswordInput(e.target.value)} 
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg outline-none mb-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500" 
+                    autoFocus 
+                  />
+                  
+                  {authError && <div className="text-red-500 text-sm mb-4 font-medium"><i className="fa-solid fa-exclamation-circle"></i> {authError}</div>}
+                  
+                  <div className="flex justify-end gap-3 mt-6">
+                    <button type="button" onClick={() => setShowAuthModal(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancelar</button>
+                    <button type="submit" className="px-6 py-2 bg-brand-600 hover:bg-brand-700 text-white font-bold rounded-lg shadow-sm transition-colors">Desbloquear</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-8">
+            
+            {/* BUSCADOR Y FILTROS */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col md:flex-row gap-4">
+              <div className="flex-1 relative">
+                <label htmlFor="searchInput" className="sr-only">Buscar tarifario</label>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400"><i className="fa-solid fa-search"></i></div>
+                <input 
+                  id="searchInput"
+                  type="text" 
+                  placeholder="Buscar por código, descripción o palabra clave..." 
+                  className="w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-brand-500 outline-none text-slate-700 font-medium" 
+                  value={searchTermInput} 
+                  onChange={(e) => setSearchTermInput(e.target.value)} 
+                />
+              </div>
+              
+              {/* Selector de Región SOLO en General */}
+              {currentView === 'general' && (
+                <div className="md:w-64 relative">
+                  <label htmlFor="regionSelect" className="sr-only">Seleccionar región</label>
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-600"><i className="fa-solid fa-map-location-dot"></i></div>
+                  <select 
+                    id="regionSelect"
+                    className="w-full pl-10 pr-10 py-3 border rounded-lg appearance-none focus:ring-2 focus:ring-brand-500 outline-none bg-brand-50 text-brand-900 font-bold cursor-pointer" 
+                    value={selectedRegion} 
+                    onChange={(e) => setSelectedRegion(e.target.value)}
+                  >
+                    {Object.entries(REGIONES).map(([key, d]) => <option key={key} value={key}>{d.nombre}</option>)}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-brand-600"><i className="fa-solid fa-chevron-down"></i></div>
+                </div>
+              )}
+            </div>
+
+            {/* CHIPS DE CATEGORÍA VERDES */}
+            <div className="mb-6 overflow-x-auto pb-2 scrollbar-hide">
+              <div className="flex gap-2">
+                {currentView === 'general' ? CATEGORIAS_GENERALES.map(cat => (
+                  <button 
+                    key={cat} 
+                    onClick={() => setSelectedCategory(cat)} 
+                    aria-pressed={selectedCategory === cat}
+                    className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-all ${selectedCategory === cat ? 'bg-brand-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-300 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200'}`}
+                  >
+                    {cat}
+                  </button>
+                )) : CATEGORIAS_PREMIUM.map(cat => (
+                  <button 
+                    key={cat} 
+                    onClick={() => setSelectedPremiumCategory(cat)} 
+                    aria-pressed={selectedPremiumCategory === cat}
+                    className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-all ${selectedPremiumCategory === cat ? 'bg-brand-600 text-white shadow-md' : 'bg-white text-slate-600 border border-slate-300 hover:bg-brand-50 hover:text-brand-700 hover:border-brand-200'}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* TABLA DE RESULTADOS */}
+            <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+              <div className="bg-brand-50 px-6 py-4 border-b border-brand-100 text-sm font-medium text-brand-800 flex flex-col sm:flex-row justify-between items-center gap-2">
+                <span>Mostrando <span className="font-bold">{currentView === 'general' ? filteredData.length : filteredPremiumData.length}</span> resultados</span>
+                
+                {currentView === 'general' && (
+                    <span className="bg-white px-3 py-1 rounded-full border border-brand-200 text-brand-700 shadow-sm">
+                        <i className="fa-solid fa-calculator mr-1"></i> Precios directos para: <b className="text-brand-900 uppercase">{REGIONES[selectedRegion].nombre}</b>
+                    </span>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse" aria-label="Tabla de precios del tarifario">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                      <th className="px-6 py-4 font-bold w-24" scope="col">Código</th>
+                      <th className="px-6 py-4 font-bold w-40" scope="col">{currentView === 'general' ? 'Grupo' : 'Tipo'}</th>
+                      <th className="px-6 py-4 font-bold" scope="col">Descripción</th>
+                      {currentView === 'general' && <th className="px-6 py-4 font-bold min-w-[250px]" scope="col">Características</th>}
+                      {currentView === 'general' && <th className="px-6 py-4 font-bold" scope="col">Rango / Medida</th>}
+                      <th className="px-6 py-4 font-bold text-right" scope="col">{currentView === 'general' ? 'Precio Final' : 'Valor'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    
+                    {/* ---- RENDERIZADO TARIFARIO GENERAL ---- */}
+                    {currentView === 'general' && filteredData.length > 0 && filteredData.map((item) => {
+                      const codigo = getCodigo(item);
+                      const grupo = getGrupo(item);
+                      const descripcion = getDesc(item);
+                      const caracteristicas = getCaract(item);
+                      const rango = getRango(item);
+                      
+                      const isPercentageRow = String(descripcion).toLowerCase().includes("porcentaje de pago a terceros");
+
+                      const nombreColumnaRegion = REGIONES[selectedRegion].columna;
+                      let precioExacto = parseFloat(item[nombreColumnaRegion]);
+                      if (isNaN(precioExacto)) {
+                          precioExacto = parseFloat(item[REGIONES[selectedRegion].nombre]) || 0;
+                      }
+
+                      const isExpanded = expandedRow === codigo;
+                      const obsData = observaciones[codigo] || {};
+
+                      return (
+                        <React.Fragment key={codigo}>
+                          <tr 
+                            className={`hover:bg-brand-50/50 cursor-pointer group transition-colors ${isExpanded ? 'bg-brand-50' : ''}`} 
+                            onClick={() => {
+                                const isExpanding = expandedRow !== codigo;
+                                setExpandedRow(isExpanding ? codigo : null);
+                                if (isExpanding && isUnlocked) {
+                                    setTempObsValue(observaciones[codigo]?.texto || "");
+                                }
+                            }}
+                          >
+                            <td className="px-6 py-4 text-sm font-black text-slate-700 relative">
+                              {codigo}
+                              {obsData.texto && isUnlocked && <div className="absolute top-1/2 -translate-y-1/2 right-2 w-2 h-2 bg-amber-400 rounded-full shadow-sm" title="Tiene observación"></div>}
+                            </td>
+                            <td className="px-6 py-4 text-sm"><span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-semibold">{grupo}</span></td>
+                            <td className="px-6 py-4 text-sm text-slate-800 font-semibold">
+                              {descripcion}
+                              <div className="text-xs text-brand-600 mt-1 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
+                                {isExpanded ? 'Ocultar observaciones ▲' : 'Ver observaciones ▼'}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-700 whitespace-pre-line leading-relaxed min-w-[250px]">{caracteristicas}</td>
+                            <td className="px-6 py-4 text-sm text-slate-500 font-medium">{rango}</td>
+                            <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioExacto, isPercentageRow)}</td>
+                          </tr>
+
+                          {isExpanded && (
+                            <tr className="bg-slate-50 border-b-2 border-brand-200">
+                              <td colSpan="6" className="px-6 py-6">
+                                <div className="w-full max-w-3xl mx-auto">
+                                  {/* Uso del componente reutilizable (Mantenimiento mejorado) */}
+                                  <ObservacionInterna 
+                                      codigo={codigo}
+                                      isUnlocked={isUnlocked}
+                                      setIsUnlocked={setIsUnlocked}
+                                      setShowAuthModal={setShowAuthModal}
+                                      tempObsValue={tempObsValue}
+                                      setTempObsValue={setTempObsValue}
+                                      isSaving={isSaving}
+                                      saveObservation={saveObservation}
+                                      obsData={obsData}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {/* ---- RENDERIZADO TARIFARIO PREMIUM ---- */}
+                    {currentView === 'premium' && filteredPremiumData.length > 0 && filteredPremiumData.map((item) => {
+                      const codigo = getCodigo(item);
+                      const tipo = getTipo(item);
+                      const descripcion = getDesc(item);
+                      let precioExacto = parseFloat(getValor(item)) || 0;
+                      
+                      const isPercentageRow = String(descripcion).toLowerCase().includes("porcentaje de pago a terceros");
+                      const isExpanded = expandedRow === codigo;
+                      const obsData = observaciones[codigo] || {};
+
+                      return (
+                        <React.Fragment key={codigo}>
+                          <tr 
+                            className={`hover:bg-brand-50/50 cursor-pointer group transition-colors ${isExpanded ? 'bg-brand-50' : ''}`} 
+                            onClick={() => {
+                                const isExpanding = expandedRow !== codigo;
+                                setExpandedRow(isExpanding ? codigo : null);
+                                if (isExpanding && isUnlocked) {
+                                    setTempObsValue(observaciones[codigo]?.texto || "");
+                                }
+                            }}
+                          >
+                            <td className="px-6 py-4 text-sm font-black text-slate-700 relative">
+                              {codigo}
+                              {obsData.texto && isUnlocked && <div className="absolute top-1/2 -translate-y-1/2 right-2 w-2 h-2 bg-amber-400 rounded-full shadow-sm" title="Tiene observación"></div>}
+                            </td>
+                            <td className="px-6 py-4 text-sm"><span className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs font-semibold">{tipo}</span></td>
+                            <td className="px-6 py-4 text-sm text-slate-800 font-semibold">
+                              {descripcion}
+                              <div className="text-xs text-brand-600 mt-1 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
+                                {isExpanded ? 'Ocultar observaciones ▲' : 'Ver observaciones ▼'}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm font-black text-brand-700 text-right">{formatCurrency(precioExacto, isPercentageRow)}</td>
+                          </tr>
+
+                          {/* FILA EXPANDIBLE PREMIUM (Solo Observaciones ya que no hay Características) */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50 border-b-2 border-brand-200">
+                              <td colSpan="4" className="px-6 py-6">
+                                <div className="w-full max-w-3xl mx-auto">
+                                  {/* Uso del componente reutilizable (Mantenimiento mejorado) */}
+                                  <ObservacionInterna 
+                                      codigo={codigo}
+                                      isUnlocked={isUnlocked}
+                                      setIsUnlocked={setIsUnlocked}
+                                      setShowAuthModal={setShowAuthModal}
+                                      tempObsValue={tempObsValue}
+                                      setTempObsValue={setTempObsValue}
+                                      isSaving={isSaving}
+                                      saveObservation={saveObservation}
+                                      obsData={obsData}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {/* SIN RESULTADOS */}
+                    {((currentView === 'general' && filteredData.length === 0) || (currentView === 'premium' && filteredPremiumData.length === 0)) && (
+                      <tr>
+                        <td colSpan={currentView === 'general' ? "6" : "4"} className="px-6 py-16 text-center">
+                          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-slate-100 mb-4">
+                              <i className="fa-solid fa-box-open text-2xl text-slate-300"></i>
+                          </div>
+                          <p className="text-lg font-bold text-slate-600">No se encontraron ítems</p>
+                          <p className="text-sm text-slate-400 mt-1">Intenta buscar con otra palabra clave o categoría.</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
+
+  <script>
+    // Configuración de colores Tailwind para temática verde
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              200: '#bbf7d0',
+              300: '#86efac',
+              400: '#4ade80',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d',
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+  
+  <div id="root"></div>
+
   <script type="text/babel">
     const { useState, useMemo, useEffect, useCallback } = React;
 
