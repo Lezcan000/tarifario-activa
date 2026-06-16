@@ -18,6 +18,15 @@
   <!-- Babel para compilar React en el navegador -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+  <script>
+  // Forzamos el runtime "clásico" (React.createElement) para que Babel NO
+  // genere sentencias `import`, que rompen el navegador con
+  // "Cannot use import statement outside a module".
+  Babel.registerPreset('react-clasico', {
+    presets: [[Babel.availablePresets['react'], { runtime: 'classic' }]],
+  });
+</script>
+
   <!-- SheetJS con soporte para estilos (Colores y bordes en Excel) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 
